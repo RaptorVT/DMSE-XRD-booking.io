@@ -301,6 +301,23 @@ function formatDate(d) { return `${FULL_DAYS[d.getDay()]}, ${d.getDate()} ${MONT
 function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 // ── API calls (all GET to avoid CORS redirect issues with Apps Script) ──
+const LOCAL_CACHE_KEY = 'xrd_bookings_cache';
+const LOCAL_CACHE_TS  = 'xrd_bookings_cache_ts';
+
+function saveCache(data) {
+  try {
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data));
+    localStorage.setItem(LOCAL_CACHE_TS, Date.now());
+  } catch(e) {}
+}
+
+function readCache() {
+  try {
+    const raw = localStorage.getItem(LOCAL_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch(e) { return null; }
+}
+
 async function apiCall(params) {
   const url = new URL(SCRIPT_URL);
   Object.entries(params).forEach(([k,v]) => url.searchParams.set(k, String(v)));
@@ -315,7 +332,10 @@ async function loadBookings() {
   }
   try {
     const data = await apiCall({ action: 'getAll' });
-    if (data.ok) return data.bookings;
+    if (data.ok) {
+      saveCache(data.bookings);
+      return data.bookings;
+    }
     throw new Error(data.error);
   } catch(e) {
     showToast('Could not load bookings. Check connection.', true);
@@ -325,10 +345,24 @@ async function loadBookings() {
 
 // ── Render ──
 async function loadAndRender() {
-  setLoading(true);
-  bookingsCache = await loadBookings();
+  // 1. Show cached data instantly if available
+  const cached = readCache();
+  if (cached) {
+    bookingsCache = cached;
+    renderCalendar();
+  } else {
+    setLoading(true);
+  }
+
+  // 2. Fetch fresh data in the background
+  const fresh = await loadBookings();
   setLoading(false);
-  renderCalendar();
+
+  // 3. Only re-render if data actually changed
+  if (JSON.stringify(fresh) !== JSON.stringify(bookingsCache)) {
+    bookingsCache = fresh;
+    renderCalendar();
+  }
 }
 
 function setLoading(on) {
@@ -490,9 +524,6 @@ async function confirmBooking() {
   const pinOk=/^\d{4}$/.test(pin);
   document.getElementById('bm-pin-err').classList.toggle('show',!pinOk);
   if (!pinOk) return;
-  const pinOk=/^\d{4}$/.test(pin);
-  document.getElementById('bm-pin-err').classList.toggle('show',!pinOk);
-  if (!pinOk) ok=false;
   if (!ok) return;
 
   const btn = document.getElementById('bm-submit');
