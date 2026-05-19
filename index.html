@@ -203,12 +203,16 @@
       <div class="field"><label>Supervisor *</label><input id="bm-supervisor" placeholder="Supervisor name" autocomplete="off"/><div class="field-error" id="bm-sup-err">Required.</div></div>
     </div>
     <div class="form-row">
-      <div class="field"><label>Scan Range (°2θ) *</label><input id="bm-range" placeholder="e.g. 10 – 80" autocomplete="off"/><div class="field-error" id="bm-range-err">Required.</div></div>
-      <div class="field"><label>Scan Speed *</label><input id="bm-speed" placeholder="e.g. 2°/min" autocomplete="off"/><div class="field-error" id="bm-speed-err">Required.</div></div>
+      <div class="field"><label>Start Angle (°2θ) *</label><input id="bm-start" type="number" step="any" placeholder="e.g. 10" autocomplete="off" oninput="updateTimeEstimate()"/><div class="field-error" id="bm-start-err">Required.</div></div>
+      <div class="field"><label>Stop Angle (°2θ) *</label><input id="bm-stop" type="number" step="any" placeholder="e.g. 80" autocomplete="off" oninput="updateTimeEstimate()"/><div class="field-error" id="bm-stop-err">Required.</div></div>
     </div>
     <div class="form-row">
+      <div class="field"><label>Scan Speed (°/min) *</label><input id="bm-speed" type="number" step="any" placeholder="e.g. 2" autocomplete="off" oninput="updateTimeEstimate()"/><div class="field-error" id="bm-speed-err">Required.</div></div>
+      <div class="field"><label>No. of Samples *</label><input id="bm-numsamples" type="number" min="1" placeholder="e.g. 3" autocomplete="off" oninput="updateTimeEstimate()"/><div class="field-error" id="bm-num-err">Required.</div></div>
+    </div>
+    <div id="time-estimate" style="display:none;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-family:var(--mono);"></div>
+    <div class="form-row">
       <div class="field"><label>Sample Type *</label><input id="bm-sample" placeholder="e.g. TiO₂ powder" autocomplete="off"/><div class="field-error" id="bm-sample-err">Required.</div></div>
-      <div class="field"><label>No. of Samples *</label><input id="bm-numsamples" type="number" min="1" placeholder="e.g. 3" autocomplete="off"/><div class="field-error" id="bm-num-err">Required.</div></div>
     </div>
     <div class="field"><label>Contact Number *</label><input id="bm-contact" placeholder="e.g. 9876543210" autocomplete="off"/><div class="field-error" id="bm-contact-err">Required.</div></div>
     <div class="section-divider">Security PIN</div>
@@ -262,7 +266,7 @@
 // ============================================================
 //  CONFIGURATION — paste your Apps Script URL here
 // ============================================================
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyJLAniixMq58DwiBUghj_oAtdQJn4yGKY3LDn8Cpmm9PPC0GyRRWnc_sAaGv-9CQ1rRA/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyrFwxTzxo9K6SImEZBCjqYLwzzs54r4FcpTv_taWgQEwq5lCMfvy97fUI7MZiasy1E5g/exec';
 // ============================================================
 
 const SLOTS = [
@@ -407,15 +411,38 @@ function renderStats(dates) {
     <div class="stat-chip"><strong>${cp}</strong> completed</div>`;
 }
 
+// ── Scan time estimate ──
+function updateTimeEstimate() {
+  const start=parseFloat(document.getElementById('bm-start').value);
+  const stop=parseFloat(document.getElementById('bm-stop').value);
+  const speed=parseFloat(document.getElementById('bm-speed').value);
+  const n=parseFloat(document.getElementById('bm-numsamples').value);
+  const te=document.getElementById('time-estimate');
+  if (!isNaN(start)&&!isNaN(stop)&&!isNaN(speed)&&!isNaN(n)&&speed>0&&stop>start) {
+    const mins=((stop-start)/speed)*n;
+    const over=mins>90;
+    te.style.display='block';
+    te.style.background=over?'var(--danger-light)':'var(--accent-light)';
+    te.style.border=over?'1px solid #d4aaaa':'1px solid #a8c8b2';
+    te.style.color=over?'var(--danger)':'var(--accent-text)';
+    te.innerHTML=over
+      ? `&#9888; Estimated scan time: <strong>${Math.round(mins)} min</strong> — exceeds 90 min slot limit`
+      : `&#10003; Estimated scan time: <strong>${Math.round(mins)} min</strong>`;
+  } else {
+    te.style.display='none';
+  }
+}
+
 // ── Booking modal ──
 function openBooking(dk, slotId) {
   pendingDate=dk; pendingSlot=slotId;
   const slot=SLOTS.find(s=>s.id===slotId), date=new Date(dk+'T00:00:00');
   document.getElementById('bm-title').textContent=slot.label;
   document.getElementById('bm-sub').textContent=formatDate(date);
-  ['bm-name','bm-supervisor','bm-range','bm-speed','bm-sample','bm-numsamples','bm-contact','bm-pin']
+  ['bm-name','bm-supervisor','bm-start','bm-stop','bm-speed','bm-sample','bm-numsamples','bm-contact','bm-pin']
     .forEach(id=>document.getElementById(id).value='');
   document.querySelectorAll('.field-error').forEach(el=>el.classList.remove('show'));
+  const te=document.getElementById('time-estimate'); te.style.display='none'; te.textContent='';
   document.getElementById('book-modal').classList.add('open');
   setTimeout(()=>document.getElementById('bm-name').focus(),80);
 }
@@ -424,7 +451,8 @@ async function confirmBooking() {
   const defs = [
     {id:'bm-name',err:'bm-name-err',key:'name'},
     {id:'bm-supervisor',err:'bm-sup-err',key:'supervisor'},
-    {id:'bm-range',err:'bm-range-err',key:'scanRange'},
+    {id:'bm-start',err:'bm-start-err',key:'startAngle'},
+    {id:'bm-stop',err:'bm-stop-err',key:'stopAngle'},
     {id:'bm-speed',err:'bm-speed-err',key:'scanSpeed'},
     {id:'bm-sample',err:'bm-sample-err',key:'sampleType'},
     {id:'bm-numsamples',err:'bm-num-err',key:'numSamples'},
@@ -436,7 +464,32 @@ async function confirmBooking() {
     document.getElementById(f.err).classList.toggle('show',!v);
     if (v) data[f.key]=v; else ok=false;
   }
+  if (!ok) return;
+
+  // Scan time validation
+  const start=parseFloat(data.startAngle), stop=parseFloat(data.stopAngle);
+  const speed=parseFloat(data.scanSpeed), nSamples=parseFloat(data.numSamples);
+  if (stop <= start) {
+    document.getElementById('bm-stop-err').textContent='Stop angle must be greater than start angle.';
+    document.getElementById('bm-stop-err').classList.add('show');
+    return;
+  }
+  const scanMins = ((stop - start) / speed) * nSamples;
+  if (scanMins > 90) {
+    const te=document.getElementById('time-estimate');
+    te.style.display='block';
+    te.style.background='var(--danger-light)';
+    te.style.border='1px solid #d4aaaa';
+    te.style.color='var(--danger)';
+    te.innerHTML=`&#9888; Request cannot be accommodated in the given time (estimated ${Math.round(scanMins)} min, max 90 min). Reduce scan range, increase scan speed, or reduce number of samples.`;
+    return;
+  }
+  data.scanRange = `${data.startAngle}° – ${data.stopAngle}°`;
+
   const pin=document.getElementById('bm-pin').value.trim();
+  const pinOk=/^\d{4}$/.test(pin);
+  document.getElementById('bm-pin-err').classList.toggle('show',!pinOk);
+  if (!pinOk) return;
   const pinOk=/^\d{4}$/.test(pin);
   document.getElementById('bm-pin-err').classList.toggle('show',!pinOk);
   if (!pinOk) ok=false;
@@ -488,8 +541,14 @@ function openInfo(key) {
     <div><div class="info-row-label">Contact</div><div class="info-row-val">${esc(b.contact)}</div></div>
     <div><div class="info-row-label">Sample type</div><div class="info-row-val">${esc(b.sampleType)}</div></div>
     <div><div class="info-row-label">No. of samples</div><div class="info-row-val">${esc(b.numSamples)}</div></div>
-    <div><div class="info-row-label">Scan range</div><div class="info-row-val">${esc(b.scanRange)}</div></div>
-    <div><div class="info-row-label">Scan speed</div><div class="info-row-val">${esc(b.scanSpeed)}</div></div>`;
+    <div><div class="info-row-label">Start angle</div><div class="info-row-val">${esc(b.startAngle)}°</div></div>
+    <div><div class="info-row-label">Stop angle</div><div class="info-row-val">${esc(b.stopAngle)}°</div></div>
+    <div><div class="info-row-label">Scan speed</div><div class="info-row-val">${esc(b.scanSpeed)} °/min</div></div>
+    <div><div class="info-row-label">Est. scan time</div><div class="info-row-val">${
+      (!isNaN(parseFloat(b.startAngle))&&!isNaN(parseFloat(b.stopAngle))&&!isNaN(parseFloat(b.scanSpeed))&&!isNaN(parseFloat(b.numSamples)))
+      ? Math.round(((parseFloat(b.stopAngle)-parseFloat(b.startAngle))/parseFloat(b.scanSpeed))*parseFloat(b.numSamples))+' min'
+      : '—'
+    }</div></div>`;
 
   const at=b.bookedAt?new Date(b.bookedAt):null;
   document.getElementById('im-footer').textContent = at
